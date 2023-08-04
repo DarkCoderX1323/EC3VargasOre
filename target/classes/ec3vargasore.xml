@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+	<http:listener-config name="ImporteTotal" host="localhost" port="8081" doc:name="HTTP Listener Configuration"/>
+	<db:mysql-config name="ComercioDB" host="localhost" port="3306" user="root" database="comerciovargasore" doc:name="MySQL Configuration"/>
+	<flow name="ImporteTotal">
+		<http:listener config-ref="ImporteTotal" path="/consultar-comprobantes-cliente" doc:name="HTTP"/>
+		<db:select config-ref="ComercioDB" doc:name="ImporteTotal">
+			<db:parameterized-query><![CDATA[SELECT COUNT(*) AS cantidad_comprobantes,
+       SUM(Importe) AS sub_total,
+       SUM(Importe) * 0.18 AS igv,
+       SUM(Importe) + SUM(Importe) * 0.18 AS importe_total
+FROM Comprobante
+WHERE FechaEmision BETWEEN #[attributes.queryParams.desde] AND #[attributes.queryParams.hasta]]]></db:parameterized-query>
+		</db:select>
+		<json:object-to-json-transformer doc:name="Object to JSON"/>
+	</flow>
+	<flow name="ComprobarComprobantes">
+		<http:listener config-ref="ImporteTotal" path="/consultar-comprobantes-cliente" doc:name="HTTP"/>
+		<db:select config-ref="ComercioDB" doc:name="ComprobarComprobantes">
+			<db:parameterized-query><![CDATA[SELECT c.Apellido, c.Nombre, c.DNI,
+                   comp.NroComp, comp.FechaEmision, comp.Importe,
+                   comp.Importe * 0.18 AS igv,
+                   comp.Importe + comp.Importe * 0.18 AS importe_total
+            FROM Comprobante comp
+            JOIN Cliente c ON comp.CodCliente = c.CodCliente
+            WHERE c.CodCliente = #[attributes.queryParams.codCliente]]]></db:parameterized-query>
+		</db:select>
+		<json:object-to-json-transformer doc:name="Object to JSON"/>
+	</flow>
+	<flow name="ActualizarComprobante">
+		<http:listener config-ref="ImporteTotal" path="/actualizar-comprobante" doc:name="HTTP"/>
+		<db:update config-ref="ComercioDB" doc:name="ActualizarDatosComprobante">
+			<db:parameterized-query><![CDATA[UPDATE Comprobante
+            SET Tipo = :tipo, FechaEmision = :fechaEmision, Importe = :importe
+            WHERE NroComp = :nroComp]]></db:parameterized-query>
+		</db:update>
+		<json:object-to-json-transformer doc:name="Object to JSON"/>
+	</flow>
+	<flow name="A&#241;adirComprobante">
+		<http:listener config-ref="ImporteTotal" path="/agregar-comprobante" doc:name="HTTP"/>
+		<db:insert config-ref="ComercioDB" doc:name="A&#241;adirComprobante">
+			<db:parameterized-query><![CDATA[INSERT INTO Comprobante (Tipo, FechaEmision, CodCliente, Importe)
+                VALUES (:tipo, :fechaEmision, :codCliente, :importe)]]></db:parameterized-query>
+		</db:insert>
+		<json:object-to-json-transformer doc:name="Object to JSON"/>
+	</flow>
+</mule>
